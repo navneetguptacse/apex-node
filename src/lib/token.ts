@@ -50,9 +50,10 @@ export function createRefreshToken(userId: string, tokenVersion: number): string
   })
 }
 
-export function verifyRefreshToken(token: string) {
-  return jwt.verify(token, process.env.JWT_REFRESH_SECRET!) as {
-    sub: string
-    tokenVersion: number
-  }
+export function verifyRefreshToken(token: string): RefreshTokenPayload {
+  return jwt.verify(token, process.env.JWT_REFRESH_SECRET!) as RefreshTokenPayload
+}
+
+export function verifyAccessToken(token: string): AccessTokenPayload {
+  return jwt.verify(token, process.env.JWT_ACCESS_SECRET as string) as AccessTokenPayload
 }
