@@ -1,3 +1,4 @@
+import crypto from 'crypto'
 import { Request, Response } from 'express'
 import jwt from 'jsonwebtoken'
 import { eSender } from '../../lib/email'
@@ -298,6 +299,135 @@ export async function logoutHandler(req: Request, res: Response) {
     return res.status(200).json({
       success: true,
       message: 'Logged out successfully',
+    })
+  }
+}
+
+export async function resetHandler(req: Request, res: Response) {
+  try {
+    const { email } = req.body as { email?: string }
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required',
+      })
+    }
+
+    const normalizedEmail = email.toLowerCase().trim()
+
+    const user = await User.findOne({ email: normalizedEmail })
+
+    if (!user) {
+      return res.status(200).json({
+        success: true,
+        message: 'If an account exists, a reset link has been sent',
+      })
+    }
+
+    const resetToken = jwt.sign(
+      {
+        sub: user._id,
+        tokenVersion: user.tokenVersion,
+      },
+      process.env.RESET_TOKEN_SECRET as string,
+      {
+        expiresIn: '15m',
+      }
+    )
+
+    const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex')
+
+    user.resetPasswordToken = hashedToken
+    user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000) // 15 mins
+
+    await user.save()
+
+    const resetLink = `${process.env.APP_URL}/reset-password?token=${resetToken}`
+    const subject = 'Reset your password'
+    const html = `
+        <p>You requested a password reset.</p>
+        <p>Click the link below to reset your password:</p>
+        <p><a href="${resetLink}">${resetLink}</a></p>
+        <p>This link expires in 15 minutes.</p>
+      `
+    await eSender(user.email, html, subject)
+
+    return res.status(200).json({
+      success: true,
+      message: 'If an account exists, a reset link has been sent',
+    })
+  } catch (error) {
+    console.error('Reset password error:', error)
+    return res.status(500).json({
+      success: false,
+      message: 'Something went wrong',
+    })
+  }
+}
+
+export async function resetPasswordHandler(req: Request, res: Response) {
+  const { token, password } = req.body as { token?: string; password?: string }
+
+  if (!token) {
+    return res.status(400).json({
+      success: false,
+      message: 'Reset token is required',
+    })
+  }
+
+  if (!password || password.length < 8) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password must be at least 8 characters long',
+    })
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.RESET_TOKEN_SECRET as string) as {
+      sub: string
+      tokenVersion: number
+    }
+
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex')
+
+    const user = await User.findOne({
+      _id: decoded.sub,
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: { $gt: new Date() },
+    })
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset token',
+      })
+    }
+
+    if (user.tokenVersion !== decoded.tokenVersion) {
+      return res.status(400).json({
+        success: false,
+        message: 'Reset token is no longer valid',
+      })
+    }
+
+    const hashedPassword = await hashPassword(password)
+
+    user.hashedPassword = hashedPassword
+    user.tokenVersion += 1
+    user.resetPasswordToken = undefined
+    user.resetPasswordExpires = undefined
+
+    await user.save()
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password has been reset successfully',
+    })
+  } catch (err) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid or expired reset token',
     })
   }
 }
