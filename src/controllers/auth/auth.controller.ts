@@ -343,7 +343,7 @@ export async function resetHandler(req: Request, res: Response) {
 
     await user.save()
 
-    const resetLink = `${process.env.APP_URL}/reset-password?token=${resetToken}`
+    const resetLink = `${process.env.APP_URL}/auth/reset-password?token=${resetToken}`
     const subject = 'Reset your password'
     const html = `
         <p>You requested a password reset.</p>
@@ -367,7 +367,8 @@ export async function resetHandler(req: Request, res: Response) {
 }
 
 export async function resetPasswordHandler(req: Request, res: Response) {
-  const { token, password } = req.body as { token?: string; password?: string }
+  const { token } = req.query as { token?: string }
+  const { password } = req.body as { password?: string }
 
   if (!token) {
     return res.status(400).json({
